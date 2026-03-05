@@ -37,11 +37,12 @@ jobs:
         docker buildx version
 
     - name: Download Dockerfile
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        echo "Downloading Dockerfile from GitHub API..."
-        curl -H "Accept: application/vnd.github.v3.raw" \
-          -o Dockerfile \
-          "https://api.github.com/repos/DSLCI/test2/contents/Dockerfile.py311.x86._2.6.0.optimized?ref=docker-build"
+        echo "Downloading Dockerfile from private repository..."
+        gh api repos/DSLCI/test2/contents/Dockerfile.py311.x86._2.6.0.optimized?ref=docker-build \
+          --jq '.content' | base64 -d > Dockerfile
         echo "Dockerfile downloaded successfully"
         ls -lh Dockerfile
         echo "Dockerfile content preview:"
