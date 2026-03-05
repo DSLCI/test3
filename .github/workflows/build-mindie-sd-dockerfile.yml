@@ -41,8 +41,8 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         echo "Cloning test2 repository to get Dockerfile..."
-        # Clone the test2 repository (sparse checkout for efficiency)
-        git clone --depth 1 --branch docker-build --filter=blob:none --sparse https://github.com/DSLCI/test2.git /tmp/test2
+        # Clone the test2 repository with token authentication (sparse checkout for efficiency)
+        git clone --depth 1 --branch docker-build --filter=blob:none --sparse https://x-access-token:${GH_TOKEN}@github.com/DSLCI/test2.git /tmp/test2
         cd /tmp/test2
         git sparse-checkout set Dockerfile.py311.x86._2.6.0.optimized
         # Copy Dockerfile to workspace
