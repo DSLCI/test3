@@ -33,7 +33,7 @@ jobs:
       with:
         repository: DSLCI/test2
         ref: docker-build
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.ACCESS_TOKEN }}
         path: test2-repo
         sparse-checkout: |
           Dockerfile.py311.x86._2.6.0.optimized
