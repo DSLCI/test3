@@ -1,0 +1,83 @@
+name: MindIE-SD Build - Optimized Dockerfile
+
+on:
+  push:
+    branches: [ dev-dockerfile-build ]
+    paths:
+      - '.github/workflows/build-mindie-sd-optimized.yml'
+      - 'build/**'
+      - 'src/**'
+      - 'setup.py'
+      - 'pyproject.toml'
+  pull_request:
+    branches: [ dev-dockerfile-build ]
+  workflow_dispatch:
+
+jobs:
+  build-optimized:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check Docker environment dependencies
+        run: |
+          echo "Checking Docker environment..."
+          docker --version
+          docker buildx version
+
+      - name: Download Optimized Dockerfile
+        id: download_dockerfile
+        run: |
+          echo "Downloading optimized Dockerfile..."
+          curl -o Dockerfile.optimized https://raw.githubusercontent.com/DSLCI/test2/docker-build/Dockerfile.py311.x86._2.6.0.optimized
+          echo "Dockerfile downloaded successfully"
+
+      - name: Build Docker image from Optimized Dockerfile
+        id: build_image
+        run: |
+          echo "START_TIME=$(date +%s)" >> $GITHUB_OUTPUT
+          echo "Building Docker image from optimized Dockerfile..."
+          docker build -t mindie-sd-build-optimized:latest -f Dockerfile.optimized .
+          echo "END_TIME=$(date +%s)" >> $GITHUB_OUTPUT
+          echo "Image built successfully"
+
+      - name: Build MindIE-SD wheel package (Optimized)
+        id: build_wheel
+        run: |
+          echo "Building MindIE-SD wheel package with optimized image..."
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            mindie-sd-build-optimized:latest \
+            bash -c "cd /workspace && git clone https://gitcode.com/Ascend/MindIE-SD.git mindie-sd && cd mindie-sd && source /usr/local/Ascend/ascend-toolkit/set_env.sh && export TORCH_DEVICE_BACKEND_AUTOLOAD=0 && export USER_ABI_VERSION=1 && python setup.py bdist_wheel && ls -lh dist/"
+
+      - name: Upload wheel artifacts
+        id: upload_artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mindie-sd-wheel-optimized
+          path: mindie-sd/dist/*.whl
+          retention-days: 30
+
+      - name: Calculate and display build statistics
+        id: display_stats
+        run: |
+          BUILD_IMAGE_TIME=$(( ${{ steps.build_image.outputs.END_TIME }} - ${{ steps.build_image.outputs.START_TIME }} ))
+          BUILD_WHEEL_TIME=$(( ${{ steps.build_wheel.outputs.END_TIME }} - ${{ steps.build_wheel.outputs.START_TIME }} ))
+          UPLOAD_END_TIME=$(date +%s)
+          UPLOAD_TIME=$(( $UPLOAD_END_TIME - ${{ steps.build_wheel.outputs.END_TIME }} ))
+          
+          echo "## Build Time Statistics - Optimized Dockerfile" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Phase | Duration (seconds) | Duration (minutes) |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------------------|-------------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Build (from Dockerfile) | $BUILD_IMAGE_TIME | $(awk "BEGIN {printf \"%.2f\", $BUILD_IMAGE_TIME/60}") |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Wheel (includes code download) | $BUILD_WHEEL_TIME | $(awk "BEGIN {printf \"%.2f\", $BUILD_WHEEL_TIME/60}") |" >> $GITHUB_STEP_SUMMARY
+          echo "| Artifact Upload | $UPLOAD_TIME | $(awk "BEGIN {printf \"%.2f\", $UPLOAD_TIME/60}") |" >> $GITHUB_STEP_SUMMARY
+          
+          TOTAL_TIME=$(( BUILD_IMAGE_TIME + BUILD_WHEEL_TIME + UPLOAD_TIME ))
+          echo "| **Total** | **$TOTAL_TIME** | **$(awk "BEGIN {printf \"%.2f\", $TOTAL_TIME/60}")** |" >> $GITHUB_STEP_SUMMARY
