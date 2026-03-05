@@ -38,10 +38,14 @@ jobs:
 
     - name: Download Dockerfile
       run: |
-        echo "Downloading Dockerfile from ${{ env.DOCKERFILE_URL }}"
-        curl -L -o Dockerfile ${{ env.DOCKERFILE_URL }}
+        echo "Downloading Dockerfile from GitHub API..."
+        curl -H "Accept: application/vnd.github.v3.raw" \
+          -o Dockerfile \
+          "https://api.github.com/repos/DSLCI/test2/contents/Dockerfile.py311.x86._2.6.0.optimized?ref=docker-build"
         echo "Dockerfile downloaded successfully"
         ls -lh Dockerfile
+        echo "Dockerfile content preview:"
+        head -20 Dockerfile
 
     - name: Build Docker image from Dockerfile
       id: build_image
