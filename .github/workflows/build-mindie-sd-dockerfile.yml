@@ -41,8 +41,11 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         echo "Downloading Dockerfile from private repository..."
-        gh api repos/DSLCI/test2/contents/Dockerfile.py311.x86._2.6.0.optimized?ref=docker-build \
-          --jq '.content' | base64 -d > Dockerfile
+        # Get the download URL from GitHub API
+        DOWNLOAD_URL=$(gh api repos/DSLCI/test2/contents/Dockerfile.py311.x86._2.6.0.optimized?ref=docker-build --jq '.download_url')
+        echo "Download URL: $DOWNLOAD_URL"
+        # Download the file using curl with token
+        curl -H "Authorization: token $GH_TOKEN" -L -o Dockerfile "$DOWNLOAD_URL"
         echo "Dockerfile downloaded successfully"
         ls -lh Dockerfile
         echo "Dockerfile content preview:"
