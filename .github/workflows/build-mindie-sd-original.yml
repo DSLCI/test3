@@ -28,12 +28,19 @@ jobs:
           docker --version
           docker buildx version
 
-      - name: Download Original Dockerfile
-        id: download_dockerfile
+      - name: Checkout test2 repository for Dockerfile
+        uses: actions/checkout@v4
+        with:
+          repository: DSLCI/test2
+          ref: docker-build
+          token: ${{ secrets.ACCESS_TOKEN }}
+          path: test2
+
+      - name: Prepare Original Dockerfile
         run: |
-          echo "Downloading original Dockerfile..."
-          curl -o Dockerfile.original https://raw.githubusercontent.com/DSLCI/test2/docker-build/Dockerfile.py311.x86._2.6.0
-          echo "Dockerfile downloaded successfully"
+          echo "Copying original Dockerfile..."
+          cp test2/Dockerfile.py311.x86._2.6.0 Dockerfile.original
+          echo "Dockerfile prepared successfully"
 
       - name: Build Docker image from Original Dockerfile
         id: build_image
