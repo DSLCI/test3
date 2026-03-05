@@ -19,6 +19,7 @@ env:
   IMAGE_TAG: latest
   REPO_URL: https://gitcode.com/Ascend/MindIE-SD.git
   SET_ENV_PATH: /usr/local/Ascend/ascend-toolkit/set_env.sh
+  LOG_DIR: build-logs
 
 jobs:
   build:
@@ -41,47 +42,116 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Check Docker environment dependencies
+    - name: Initialize build logs directory
       run: |
-        docker --version
-        docker buildx version
+        mkdir -p ${{ env.LOG_DIR }}
+        echo "Build logs directory initialized: ${{ env.LOG_DIR }}"
+
+    - name: Check Docker environment dependencies
+      id: check_deps
+      run: |
+        echo "=== Docker Environment Check ===" >> ${{ env.LOG_DIR }}/build.log
+        echo "Start time: $(date '+%Y-%m-%d %H:%M:%S')" >> ${{ env.LOG_DIR }}/build.log
+        echo "Checking Docker environment dependencies..." | tee -a ${{ env.LOG_DIR }}/build.log
+        docker --version | tee -a ${{ env.LOG_DIR }}/build.log
+        docker buildx version | tee -a ${{ env.LOG_DIR }}/build.log
+        echo "Docker environment check completed." | tee -a ${{ env.LOG_DIR }}/build.log
+        echo "End time: $(date '+%Y-%m-%d %H:%M:%S')" >> ${{ env.LOG_DIR }}/build.log
+        echo "=== End Docker Environment Check ===" >> ${{ env.LOG_DIR }}/build.log
+        echo "START_TIME=$(date +%s)" >> $GITHUB_OUTPUT
+        echo "END_TIME=$(date +%s)" >> $GITHUB_OUTPUT
 
     - name: Prepare Dockerfile
+      id: prepare_dockerfile
       run: |
-        echo "Copying Dockerfile from test2 repository..."
+        echo "=== Dockerfile Preparation ===" >> ${{ env.LOG_DIR }}/build.log
+        echo "Start time: $(date '+%Y-%m-%d %H:%M:%S')" >> ${{ env.LOG_DIR }}/build.log
+        echo "Copying Dockerfile from test2 repository..." | tee -a ${{ env.LOG_DIR }}/build.log
         cp test2-repo/Dockerfile.py311.x86._2.6.0.optimized Dockerfile
         rm -rf test2-repo
-        echo "Dockerfile prepared successfully"
-        ls -lh Dockerfile
-        echo "Dockerfile content preview:"
-        head -20 Dockerfile
+        echo "Dockerfile prepared successfully" | tee -a ${{ env.LOG_DIR }}/build.log
+        echo "Dockerfile info:" | tee -a ${{ env.LOG_DIR }}/build.log
+        ls -lh Dockerfile | tee -a ${{ env.LOG_DIR }}/build.log
+        echo "Dockerfile content preview (first 20 lines):" | tee -a ${{ env.LOG_DIR }}/build.log
+        head -20 Dockerfile | tee -a ${{ env.LOG_DIR }}/build.log
+        echo "End time: $(date '+%Y-%m-%d %H:%M:%S')" >> ${{ env.LOG_DIR }}/build.log
+        echo "=== End Dockerfile Preparation ===" >> ${{ env.LOG_DIR }}/build.log
+        echo "START_TIME=$(date +%s)" >> $GITHUB_OUTPUT
+        echo "END_TIME=$(date +%s)" >> $GITHUB_OUTPUT
 
     - name: Build Docker image from Dockerfile
       id: build_image
       run: |
+        echo "=== Docker Image Build ===" >> ${{ env.LOG_DIR }}/build.log
+        echo "Start time: $(date '+%Y-%m-%d %H:%M:%S')" >> ${{ env.LOG_DIR }}/build.log
+        echo "Building Docker image from Dockerfile..." | tee -a ${{ env.LOG_DIR }}/build.log
+        echo "Image name: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" | tee -a ${{ env.LOG_DIR }}/build.log
+        
+        # Build Docker image with limited log output
+        # Use --progress plain to get more detailed build information
+        # Redirect verbose output to log file only
+        docker build --progress plain -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} -f Dockerfile . 2>&1 | tee -a ${{ env.LOG_DIR }}/docker-build.log
+        
+        # Check if build was successful
+        if [ $? -eq 0 ]; then
+          echo "Docker image built successfully" | tee -a ${{ env.LOG_DIR }}/build.log
+          echo "Image details:" | tee -a ${{ env.LOG_DIR }}/build.log
+          docker images ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} | tee -a ${{ env.LOG_DIR }}/build.log
+        else
+          echo "Docker image build failed!" | tee -a ${{ env.LOG_DIR }}/build.log
+          exit 1
+        fi
+        
+        echo "End time: $(date '+%Y-%m-%d %H:%M:%S')" >> ${{ env.LOG_DIR }}/build.log
+        echo "=== End Docker Image Build ===" >> ${{ env.LOG_DIR }}/build.log
         echo "START_TIME=$(date +%s)" >> $GITHUB_OUTPUT
-        echo "Building Docker image from Dockerfile..."
-        docker build -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} -f Dockerfile .
-        echo "Docker image built successfully"
         echo "END_TIME=$(date +%s)" >> $GITHUB_OUTPUT
 
     - name: Build MindIE-SD wheel package
-      id: build
+      id: build_wheel
       run: |
-        echo "START_TIME=$(date +%s)" >> $GITHUB_OUTPUT
+        echo "=== MindIE-SD Wheel Build ===" >> ${{ env.LOG_DIR }}/build.log
+        echo "Start time: $(date '+%Y-%m-%d %H:%M:%S')" >> ${{ env.LOG_DIR }}/build.log
+        echo "Building MindIE-SD wheel package..." | tee -a ${{ env.LOG_DIR }}/build.log
+        
+        # Run docker build with limited terminal output
         docker run --rm \
           -v ${{ github.workspace }}:/workspace \
           ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
-          bash -c "cd /workspace && git clone ${{ env.REPO_URL }} mindie-sd && cd mindie-sd && source ${{ env.SET_ENV_PATH }} && export TORCH_DEVICE_BACKEND_AUTOLOAD=0 && export USER_ABI_VERSION=1 && python setup.py bdist_wheel && ls -lh dist/"
+          bash -c "cd /workspace && git clone ${{ env.REPO_URL }} mindie-sd 2>&1 | tee -a ${{ env.LOG_DIR }}/wheel-build.log && cd mindie-sd && source ${{ env.SET_ENV_PATH }} && export TORCH_DEVICE_BACKEND_AUTOLOAD=0 && export USER_ABI_VERSION=1 && python setup.py bdist_wheel 2>&1 | tee -a ${{ env.LOG_DIR }}/wheel-build.log && ls -lh dist/" | tee -a ${{ env.LOG_DIR }}/build.log
+        
+        # Check if wheel was built successfully
+        if [ -f "mindie-sd/dist/*.whl" ]; then
+          echo "Wheel package built successfully" | tee -a ${{ env.LOG_DIR }}/build.log
+          echo "Wheel file info:" | tee -a ${{ env.LOG_DIR }}/build.log
+          ls -lh mindie-sd/dist/*.whl | tee -a ${{ env.LOG_DIR }}/build.log
+        else
+          echo "Wheel package build failed!" | tee -a ${{ env.LOG_DIR }}/build.log
+          exit 1
+        fi
+        
+        echo "End time: $(date '+%Y-%m-%d %H:%M:%S')" >> ${{ env.LOG_DIR }}/build.log
+        echo "=== End MindIE-SD Wheel Build ===" >> ${{ env.LOG_DIR }}/build.log
+        echo "START_TIME=$(date +%s)" >> $GITHUB_OUTPUT
         echo "END_TIME=$(date +%s)" >> $GITHUB_OUTPUT
 
     - name: Upload wheel artifacts
-      id: upload_start
+      id: upload_artifacts
       uses: actions/upload-artifact@v4
       with:
         name: mindie-sd-wheel
         path: mindie-sd/dist/*.whl
         retention-days: 30
+
+    - name: Upload build logs
+      id: upload_logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: ${{ env.LOG_DIR }}/
+        retention-days: 30
+        if-no-files-found: warn
 
     - name: Record upload end time
       id: upload_end
@@ -90,23 +160,44 @@ jobs:
 
     - name: Calculate and display build statistics
       run: |
+        # Calculate times for each phase
+        CHECK_DEPS_TIME=$(( ${{ steps.check_deps.outputs.END_TIME }} - ${{ steps.check_deps.outputs.START_TIME }} ))
+        PREPARE_DOCKERFILE_TIME=$(( ${{ steps.prepare_dockerfile.outputs.END_TIME }} - ${{ steps.prepare_dockerfile.outputs.START_TIME }} ))
         BUILD_IMAGE_TIME=$(( ${{ steps.build_image.outputs.END_TIME }} - ${{ steps.build_image.outputs.START_TIME }} ))
-        BUILD_WHEEL_TIME=$(( ${{ steps.build.outputs.END_TIME }} - ${{ steps.build.outputs.START_TIME }} ))
-        UPLOAD_TIME=$(( ${{ steps.upload_end.outputs.END_TIME }} - ${{ steps.upload_start.outputs.START_TIME }} ))
-
-        echo "## Build Time Statistics" >> $GITHUB_STEP_SUMMARY
+        BUILD_WHEEL_TIME=$(( ${{ steps.build_wheel.outputs.END_TIME }} - ${{ steps.build_wheel.outputs.START_TIME }} ))
+        UPLOAD_TIME=$(( ${{ steps.upload_end.outputs.END_TIME }} - ${{ steps.upload_artifacts.outputs.START_TIME }} ))
+        
+        TOTAL_TIME=$(( CHECK_DEPS_TIME + PREPARE_DOCKERFILE_TIME + BUILD_IMAGE_TIME + BUILD_WHEEL_TIME + UPLOAD_TIME ))
+        
+        # Display detailed build statistics to build summary
+        echo "## 📊 Build Time Statistics" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "| Phase | Duration (seconds) | Duration (minutes) |" >> $GITHUB_STEP_SUMMARY
         echo "|-------|-------------------|-------------------|" >> $GITHUB_STEP_SUMMARY
-        echo "| Image Build (from Dockerfile) | $BUILD_IMAGE_TIME | $(awk "BEGIN {printf \"%.2f\", $BUILD_IMAGE_TIME/60}") |" >> $GITHUB_STEP_SUMMARY
-        echo "| Build Wheel (includes code download) | $BUILD_WHEEL_TIME | $(awk "BEGIN {printf \"%.2f\", $BUILD_WHEEL_TIME/60}") |" >> $GITHUB_STEP_SUMMARY
+        echo "| Docker Environment Check | $CHECK_DEPS_TIME | $(awk "BEGIN {printf \"%.2f\", $CHECK_DEPS_TIME/60}") |" >> $GITHUB_STEP_SUMMARY
+        echo "| Dockerfile Preparation | $PREPARE_DOCKERFILE_TIME | $(awk "BEGIN {printf \"%.2f\", $PREPARE_DOCKERFILE_TIME/60}") |" >> $GITHUB_STEP_SUMMARY
+        echo "| Docker Image Build | $BUILD_IMAGE_TIME | $(awk "BEGIN {printf \"%.2f\", $BUILD_IMAGE_TIME/60}") |" >> $GITHUB_STEP_SUMMARY
+        echo "| MindIE-SD Wheel Build | $BUILD_WHEEL_TIME | $(awk "BEGIN {printf \"%.2f\", $BUILD_WHEEL_TIME/60}") |" >> $GITHUB_STEP_SUMMARY
         echo "| Artifact Upload | $UPLOAD_TIME | $(awk "BEGIN {printf \"%.2f\", $UPLOAD_TIME/60}") |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Total Build Time** | **$TOTAL_TIME** | **$(awk "BEGIN {printf \"%.2f\", $TOTAL_TIME/60}")** |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 📝 Build Artifacts" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Wheel Package**: mindie-sd-wheel (retention: 30 days)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Logs**: build-logs (retention: 30 days)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 📂 Build Log Files" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Log File | Description |" >> $GITHUB_STEP_SUMMARY
+        echo "|----------|-------------|" >> $GITHUB_STEP_SUMMARY
+        echo "| build.log | Main build process log |" >> $GITHUB_STEP_SUMMARY
+        echo "| docker-build.log | Docker image build output |" >> $GITHUB_STEP_SUMMARY
+        echo "| wheel-build.log | Wheel package build output |" >> $GITHUB_STEP_SUMMARY
 
-        TOTAL_TIME=$(( BUILD_IMAGE_TIME + BUILD_WHEEL_TIME + UPLOAD_TIME ))
-        echo "| **Total** | **$TOTAL_TIME** | **$(awk "BEGIN {printf \"%.2f\", $TOTAL_TIME/60}")** |" >> $GITHUB_STEP_SUMMARY
-
-    - name: Clean up Dockerfile
+    - name: Clean up
       if: always()
       run: |
+        echo "Cleaning up temporary files..."
         rm -f Dockerfile
-        echo "Dockerfile cleaned up"
+        rm -rf mindie-sd
+        echo "Cleanup completed"
