@@ -1,0 +1,403 @@
+name: MindIE-SD Build Comparison
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - '.github/workflows/build-mindie-sd-comparison.yml'
+      - 'build/**'
+      - 'src/**'
+      - 'setup.py'
+      - 'pyproject.toml'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  REPO_URL: https://gitcode.com/Ascend/MindIE-SD.git
+  SET_ENV_PATH: /usr/local/Ascend/ascend-toolkit/set_env.sh
+
+jobs:
+  # ===========================================
+  # 构建 Job - Optimized Dockerfile
+  # ===========================================
+  build-optimized:
+    runs-on: ubuntu-latest
+    outputs:
+      checkout_time: ${{ steps.checkout_test2.outputs.DURATION }}
+      prepare_time: ${{ steps.prepare_dockerfile.outputs.DURATION }}
+      build_image_time: ${{ steps.build_image.outputs.DURATION }}
+      build_wheel_time: ${{ steps.build_wheel.outputs.DURATION }}
+      total_time: ${{ steps.calculate_total.outputs.TOTAL_TIME }}
+      image_size: ${{ steps.image_size.outputs.IMAGE_SIZE }}
+      wheel_name: ${{ steps.wheel_info.outputs.WHEEL_NAME }}
+      wheel_size: ${{ steps.wheel_info.outputs.WHEEL_SIZE }}
+      build_status: ${{ steps.build_status.outputs.STATUS }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check Docker environment dependencies
+        run: |
+          echo "Checking Docker environment..."
+          docker --version
+          docker buildx version
+
+      - name: Checkout test2 repository for Dockerfile
+        id: checkout_test2
+        run: |
+          START_TIME=$(date +%s)
+          git clone --branch docker-build --single-branch https://x-access-token:${{ secrets.ACCESS_TOKEN }}@github.com/DSLCI/test2.git test2
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+          echo "START_TIME=$START_TIME" >> $GITHUB_OUTPUT
+          echo "END_TIME=$END_TIME" >> $GITHUB_OUTPUT
+          echo "DURATION=$DURATION" >> $GITHUB_OUTPUT
+          echo "Checkout test2 repository completed in ${DURATION}s"
+
+      - name: Prepare Optimized Dockerfile
+        id: prepare_dockerfile
+        run: |
+          START_TIME=$(date +%s)
+          echo "Copying optimized Dockerfile..."
+          cp test2/Dockerfile.py311.x86._2.6.0.optimized Dockerfile.optimized
+          echo "Dockerfile prepared successfully"
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+          echo "START_TIME=$START_TIME" >> $GITHUB_OUTPUT
+          echo "END_TIME=$END_TIME" >> $GITHUB_OUTPUT
+          echo "DURATION=$DURATION" >> $GITHUB_OUTPUT
+
+      - name: Build Docker image from Optimized Dockerfile
+        id: build_image
+        run: |
+          START_TIME=$(date +%s)
+          echo "Building Docker image from optimized Dockerfile..."
+          docker build -t mindie-sd-build-optimized:latest -f Dockerfile.optimized .
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+          echo "START_TIME=$START_TIME" >> $GITHUB_OUTPUT
+          echo "END_TIME=$END_TIME" >> $GITHUB_OUTPUT
+          echo "DURATION=$DURATION" >> $GITHUB_OUTPUT
+          echo "Image built successfully in ${DURATION}s"
+
+      - name: Get Docker image size
+        id: image_size
+        run: |
+          IMAGE_SIZE=$(docker images mindie-sd-build-optimized:latest --format "{{.Size}}")
+          echo "IMAGE_SIZE=$IMAGE_SIZE" >> $GITHUB_OUTPUT
+          echo "Optimized image size: $IMAGE_SIZE"
+
+      - name: Build MindIE-SD wheel package (Optimized)
+        id: build_wheel
+        run: |
+          START_TIME=$(date +%s)
+          echo "Building MindIE-SD wheel package with optimized image..."
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            mindie-sd-build-optimized:latest \
+            bash -c "cd /workspace && git clone ${{ env.REPO_URL }} mindie-sd && cd mindie-sd && source ${{ env.SET_ENV_PATH }} && export TORCH_DEVICE_BACKEND_AUTOLOAD=0 && export USER_ABI_VERSION=1 && python setup.py bdist_wheel && ls -lh dist/"
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+          echo "START_TIME=$START_TIME" >> $GITHUB_OUTPUT
+          echo "END_TIME=$END_TIME" >> $GITHUB_OUTPUT
+          echo "DURATION=$DURATION" >> $GITHUB_OUTPUT
+
+      - name: Get wheel package info
+        id: wheel_info
+        run: |
+          WHEEL_FILE=$(ls mindie-sd/dist/*.whl | head -1)
+          WHEEL_SIZE=$(ls -lh $WHEEL_FILE | awk '{print $5}')
+          WHEEL_NAME=$(basename $WHEEL_FILE)
+          echo "WHEEL_NAME=$WHEEL_NAME" >> $GITHUB_OUTPUT
+          echo "WHEEL_SIZE=$WHEEL_SIZE" >> $GITHUB_OUTPUT
+          echo "Wheel package: $WHEEL_NAME ($WHEEL_SIZE)"
+
+      - name: Calculate total time
+        id: calculate_total
+        run: |
+          TOTAL=$(( ${{ steps.checkout_test2.outputs.DURATION }} + ${{ steps.prepare_dockerfile.outputs.DURATION }} + ${{ steps.build_image.outputs.DURATION }} + ${{ steps.build_wheel.outputs.DURATION }} ))
+          echo "TOTAL_TIME=$TOTAL" >> $GITHUB_OUTPUT
+
+      - name: Set build status
+        id: build_status
+        if: always()
+        run: |
+          if [ -f "mindie-sd/dist/*.whl" ]; then
+            echo "STATUS=success" >> $GITHUB_OUTPUT
+          else
+            echo "STATUS=failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mindie-sd-wheel-optimized
+          path: mindie-sd/dist/*.whl
+          retention-days: 30
+
+  # ===========================================
+  # 构建 Job - Original Dockerfile
+  # ===========================================
+  build-original:
+    runs-on: ubuntu-latest
+    outputs:
+      checkout_time: ${{ steps.checkout_test2.outputs.DURATION }}
+      prepare_time: ${{ steps.prepare_dockerfile.outputs.DURATION }}
+      build_image_time: ${{ steps.build_image.outputs.DURATION }}
+      build_wheel_time: ${{ steps.build_wheel.outputs.DURATION }}
+      total_time: ${{ steps.calculate_total.outputs.TOTAL_TIME }}
+      image_size: ${{ steps.image_size.outputs.IMAGE_SIZE }}
+      wheel_name: ${{ steps.wheel_info.outputs.WHEEL_NAME }}
+      wheel_size: ${{ steps.wheel_info.outputs.WHEEL_SIZE }}
+      build_status: ${{ steps.build_status.outputs.STATUS }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check Docker environment dependencies
+        run: |
+          echo "Checking Docker environment..."
+          docker --version
+          docker buildx version
+
+      - name: Checkout test2 repository for Dockerfile
+        id: checkout_test2
+        run: |
+          START_TIME=$(date +%s)
+          git clone --branch docker-build --single-branch https://x-access-token:${{ secrets.ACCESS_TOKEN }}@github.com/DSLCI/test2.git test2
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+          echo "START_TIME=$START_TIME" >> $GITHUB_OUTPUT
+          echo "END_TIME=$END_TIME" >> $GITHUB_OUTPUT
+          echo "DURATION=$DURATION" >> $GITHUB_OUTPUT
+          echo "Checkout test2 repository completed in ${DURATION}s"
+
+      - name: Prepare Original Dockerfile
+        id: prepare_dockerfile
+        run: |
+          START_TIME=$(date +%s)
+          echo "Copying original Dockerfile..."
+          cp test2/Dockerfile.py311.x86._2.6.0 Dockerfile.original
+          echo "Dockerfile prepared successfully"
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+          echo "START_TIME=$START_TIME" >> $GITHUB_OUTPUT
+          echo "END_TIME=$END_TIME" >> $GITHUB_OUTPUT
+          echo "DURATION=$DURATION" >> $GITHUB_OUTPUT
+
+      - name: Build Docker image from Original Dockerfile
+        id: build_image
+        run: |
+          START_TIME=$(date +%s)
+          echo "Building Docker image from original Dockerfile..."
+          docker build -t mindie-sd-build-original:latest -f Dockerfile.original .
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+          echo "START_TIME=$START_TIME" >> $GITHUB_OUTPUT
+          echo "END_TIME=$END_TIME" >> $GITHUB_OUTPUT
+          echo "DURATION=$DURATION" >> $GITHUB_OUTPUT
+          echo "Image built successfully in ${DURATION}s"
+
+      - name: Get Docker image size
+        id: image_size
+        run: |
+          IMAGE_SIZE=$(docker images mindie-sd-build-original:latest --format "{{.Size}}")
+          echo "IMAGE_SIZE=$IMAGE_SIZE" >> $GITHUB_OUTPUT
+          echo "Original image size: $IMAGE_SIZE"
+
+      - name: Build MindIE-SD wheel package (Original)
+        id: build_wheel
+        run: |
+          START_TIME=$(date +%s)
+          echo "Building MindIE-SD wheel package with original image..."
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            mindie-sd-build-original:latest \
+            bash -c "cd /workspace && git clone ${{ env.REPO_URL }} mindie-sd && cd mindie-sd && source ${{ env.SET_ENV_PATH }} && export TORCH_DEVICE_BACKEND_AUTOLOAD=0 && export USER_ABI_VERSION=1 && python setup.py bdist_wheel && ls -lh dist/"
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+          echo "START_TIME=$START_TIME" >> $GITHUB_OUTPUT
+          echo "END_TIME=$END_TIME" >> $GITHUB_OUTPUT
+          echo "DURATION=$DURATION" >> $GITHUB_OUTPUT
+
+      - name: Get wheel package info
+        id: wheel_info
+        run: |
+          WHEEL_FILE=$(ls mindie-sd/dist/*.whl | head -1)
+          WHEEL_SIZE=$(ls -lh $WHEEL_FILE | awk '{print $5}')
+          WHEEL_NAME=$(basename $WHEEL_FILE)
+          echo "WHEEL_NAME=$WHEEL_NAME" >> $GITHUB_OUTPUT
+          echo "WHEEL_SIZE=$WHEEL_SIZE" >> $GITHUB_OUTPUT
+          echo "Wheel package: $WHEEL_NAME ($WHEEL_SIZE)"
+
+      - name: Calculate total time
+        id: calculate_total
+        run: |
+          TOTAL=$(( ${{ steps.checkout_test2.outputs.DURATION }} + ${{ steps.prepare_dockerfile.outputs.DURATION }} + ${{ steps.build_image.outputs.DURATION }} + ${{ steps.build_wheel.outputs.DURATION }} ))
+          echo "TOTAL_TIME=$TOTAL" >> $GITHUB_OUTPUT
+
+      - name: Set build status
+        id: build_status
+        if: always()
+        run: |
+          if [ -f "mindie-sd/dist/*.whl" ]; then
+            echo "STATUS=success" >> $GITHUB_OUTPUT
+          else
+            echo "STATUS=failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mindie-sd-wheel-original
+          path: mindie-sd/dist/*.whl
+          retention-days: 30
+
+  # ===========================================
+  # 对比分析 Job
+  # ===========================================
+  comparison-analysis:
+    runs-on: ubuntu-latest
+    needs: [build-optimized, build-original]
+    if: always()
+    
+    steps:
+      - name: Display comparison analysis
+        run: |
+          # 获取两个构建的结果
+          OPTIMIZED_STATUS="${{ needs.build-optimized.outputs.build_status }}"
+          ORIGINAL_STATUS="${{ needs.build-original.outputs.build_status }}"
+          
+          OPTIMIZED_TOTAL="${{ needs.build-optimized.outputs.total_time }}"
+          ORIGINAL_TOTAL="${{ needs.build-original.outputs.total_time }}"
+          
+          OPTIMIZED_IMAGE_SIZE="${{ needs.build-optimized.outputs.image_size }}"
+          ORIGINAL_IMAGE_SIZE="${{ needs.build-original.outputs.image_size }}"
+          
+          OPTIMIZED_WHEEL_SIZE="${{ needs.build-optimized.outputs.wheel_size }}"
+          ORIGINAL_WHEEL_SIZE="${{ needs.build-original.outputs.wheel_size }}"
+          
+          OPTIMIZED_WHEEL_NAME="${{ needs.build-optimized.outputs.wheel_name }}"
+          ORIGINAL_WHEEL_NAME="${{ needs.build-original.outputs.wheel_name }}"
+          
+          # 计算时间差
+          if [ -n "$OPTIMIZED_TOTAL" ] && [ -n "$ORIGINAL_TOTAL" ] && [ "$OPTIMIZED_TOTAL" != "0" ] && [ "$ORIGINAL_TOTAL" != "0" ]; then
+            TIME_DIFF=$((ORIGINAL_TOTAL - OPTIMIZED_TOTAL))
+            if [ "$OPTIMIZED_TOTAL" -gt 0 ]; then
+              TIME_PERCENT=$(awk "BEGIN {printf \"%.1f\", ($TIME_DIFF / $ORIGINAL_TOTAL) * 100}")
+            else
+              TIME_PERCENT="0"
+            fi
+          else
+            TIME_DIFF="N/A"
+            TIME_PERCENT="N/A"
+          fi
+          
+          # 输出对比分析报告
+          echo "# 📊 MindIE-SD Build Comparison Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔄 Build Status Overview" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Type | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+          if [ "$OPTIMIZED_STATUS" = "success" ]; then
+            echo "| 🚀 Optimized Dockerfile | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 🚀 Optimized Dockerfile | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "$ORIGINAL_STATUS" = "success" ]; then
+            echo "| 📦 Original Dockerfile | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 📦 Original Dockerfile | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## ⏱️ Build Time Comparison" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Phase | Optimized | Original | Difference |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|-----------|----------|------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔍 Checkout test2 | ${{ needs.build-optimized.outputs.checkout_time }}s | ${{ needs.build-original.outputs.checkout_time }}s | - |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📄 Prepare Dockerfile | ${{ needs.build-optimized.outputs.prepare_time }}s | ${{ needs.build-original.outputs.prepare_time }}s | - |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🐳 Build Docker Image | ${{ needs.build-optimized.outputs.build_image_time }}s | ${{ needs.build-original.outputs.build_image_time }}s | - |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📦 Build Wheel Package | ${{ needs.build-optimized.outputs.build_wheel_time }}s | ${{ needs.build-original.outputs.build_wheel_time }}s | - |" >> $GITHUB_STEP_SUMMARY
+          echo "| **⏱️ Total Time** | **${OPTIMIZED_TOTAL}s** | **${ORIGINAL_TOTAL}s** | **${TIME_DIFF}s (${TIME_PERCENT}%)** |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 🐳 Docker Image Comparison" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Optimized | Original |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-----------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Name | mindie-sd-build-optimized | mindie-sd-build-original |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Size | $OPTIMIZED_IMAGE_SIZE | $ORIGINAL_IMAGE_SIZE |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dockerfile | Dockerfile.py311.x86._2.6.0.optimized | Dockerfile.py311.x86._2.6.0 |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 📦 Wheel Package Comparison" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Optimized | Original |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-----------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Package Name | $OPTIMIZED_WHEEL_NAME | $ORIGINAL_WHEEL_NAME |" >> $GITHUB_STEP_SUMMARY
+          echo "| Package Size | $OPTIMIZED_WHEEL_SIZE | $ORIGINAL_WHEEL_SIZE |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 📈 Analysis Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏆 Performance Winner" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "$OPTIMIZED_TOTAL" -lt "$ORIGINAL_TOTAL" ] 2>/dev/null; then
+            echo "- **构建时间**: 🚀 Optimized Dockerfile 更快 ${TIME_DIFF}s (${TIME_PERCENT}%)" >> $GITHUB_STEP_SUMMARY
+          elif [ "$OPTIMIZED_TOTAL" -gt "$ORIGINAL_TOTAL" ] 2>/dev/null; then
+            echo "- **构建时间**: 📦 Original Dockerfile 更快 $((OPTIMIZED_TOTAL - ORIGINAL_TOTAL))s" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **构建时间**: 两者相当" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 Key Differences" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Feature | Optimized | Original |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-----------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| CMake | 预编译版本 | 从源码编译 |" >> $GITHUB_STEP_SUMMARY
+          echo "| 镜像层优化 | ✅ 使用 apt-get clean | ❌ 未优化 |" >> $GITHUB_STEP_SUMMARY
+          echo "| 额外工具 | 最小化 | vim, tree, ntpdate 等 |" >> $GITHUB_STEP_SUMMARY
+          echo "| 构建复杂度 | 较低 | 较高 |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 💡 Recommendations" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. **生产环境推荐**: 使用 Optimized Dockerfile，构建更快，镜像更小" >> $GITHUB_STEP_SUMMARY
+          echo "2. **开发环境推荐**: 使用 Original Dockerfile，包含更多调试工具" >> $GITHUB_STEP_SUMMARY
+          echo "3. **CI/CD 优化**: 建议缓存 Docker 镜像层以进一步加速构建" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_Report generated at $(date '+%Y-%m-%d %H:%M:%S UTC')_" >> $GITHUB_STEP_SUMMARY
+
+      - name: Download optimized wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mindie-sd-wheel-optimized
+          path: artifacts/optimized
+        continue-on-error: true
+
+      - name: Download original wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mindie-sd-wheel-original
+          path: artifacts/original
+        continue-on-error: true
+
+      - name: Verify wheel packages
+        run: |
+          echo "=== Optimized Wheel Package ==="
+          ls -lh artifacts/optimized/ 2>/dev/null || echo "No optimized wheel found"
+          echo ""
+          echo "=== Original Wheel Package ==="
+          ls -lh artifacts/original/ 2>/dev/null || echo "No original wheel found"

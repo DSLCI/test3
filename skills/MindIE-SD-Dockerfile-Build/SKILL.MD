@@ -2,13 +2,15 @@
 
 ## Skill 概述
 
-本 Skill 用于自动生成 MindIE-SD 项目的 GitHub Actions workflow，使用 Dockerfile 构建镜像并实现自动化构建 wheel 包的完整流水线。
+本 Skill 用于自动生成 MindIE-SD 项目的 GitHub Actions workflow，使用 Dockerfile 构建镜像并实现自动化构建 wheel 包的完整流水线。支持多种 Dockerfile 版本的并行构建和对比分析。
 
 ## 功能特性
 
 - 自动生成 GitHub Actions workflow 文件
 - 使用 Dockerfile 构建自定义镜像（不直接拉取预构建镜像）
 - 在 workflow 执行时自动下载 Dockerfile，不存储到项目中
+- 支持多种 Dockerfile 版本并行构建（Optimized 和 Original）
+- 构建结果对比分析，自动生成对比报告
 - Docker 环境配置和依赖检查
 - 构建时长统计（镜像构建、wheel构建、制品归档）
 - 时长统计展示在 GitHub Actions build summary
@@ -16,6 +18,19 @@
 - Workflow 语法检查，确保无低级错误
 - 自动提交代码并推送到远端仓库
 - 完整的错误处理和故障排查
+
+## Workflow 类型
+
+### 1. 对比构建 Workflow (build-mindie-sd-comparison.yml)
+- 并行执行 Optimized 和 Original 两种 Dockerfile 构建
+- 自动生成对比分析报告
+- 包含构建时间、镜像大小、wheel 包大小等对比
+- 提供优化建议
+
+### 2. 单独构建 Workflow
+- `build-mindie-sd-optimized.yml`: 仅使用 Optimized Dockerfile 构建
+- `build-mindie-sd-original.yml`: 仅使用 Original Dockerfile 构建
+- `build-mindie-sd-dockerfile.yml`: 通用 Dockerfile 构建模板
 
 ## 环境要求
 
