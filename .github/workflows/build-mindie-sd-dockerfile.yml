@@ -28,6 +28,16 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Checkout test2 repository for Dockerfile
+      uses: actions/checkout@v4
+      with:
+        repository: DSLCI/test2
+        ref: docker-build
+        token: ${{ secrets.GITHUB_TOKEN }}
+        path: test2-repo
+        sparse-checkout: |
+          Dockerfile.py311.x86._2.6.0.optimized
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
@@ -36,20 +46,12 @@ jobs:
         docker --version
         docker buildx version
 
-    - name: Download Dockerfile
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Prepare Dockerfile
       run: |
-        echo "Cloning test2 repository to get Dockerfile..."
-        # Clone the test2 repository with token authentication (sparse checkout for efficiency)
-        git clone --depth 1 --branch docker-build --filter=blob:none --sparse https://x-access-token:${GH_TOKEN}@github.com/DSLCI/test2.git /tmp/test2
-        cd /tmp/test2
-        git sparse-checkout set Dockerfile.py311.x86._2.6.0.optimized
-        # Copy Dockerfile to workspace
-        cp Dockerfile.py311.x86._2.6.0.optimized $GITHUB_WORKSPACE/Dockerfile
-        cd $GITHUB_WORKSPACE
-        rm -rf /tmp/test2
-        echo "Dockerfile downloaded successfully"
+        echo "Copying Dockerfile from test2 repository..."
+        cp test2-repo/Dockerfile.py311.x86._2.6.0.optimized Dockerfile
+        rm -rf test2-repo
+        echo "Dockerfile prepared successfully"
         ls -lh Dockerfile
         echo "Dockerfile content preview:"
         head -20 Dockerfile
