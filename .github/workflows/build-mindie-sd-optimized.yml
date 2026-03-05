@@ -2,7 +2,6 @@ name: MindIE-SD Build - Optimized Dockerfile
 
 on:
   push:
-    branches: [ dev-dockerfile-build ]
     paths:
       - '.github/workflows/build-mindie-sd-optimized.yml'
       - 'build/**'
@@ -10,7 +9,6 @@ on:
       - 'setup.py'
       - 'pyproject.toml'
   pull_request:
-    branches: [ dev-dockerfile-build ]
   workflow_dispatch:
 
 jobs:
