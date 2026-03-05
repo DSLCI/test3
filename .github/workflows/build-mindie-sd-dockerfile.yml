@@ -40,12 +40,15 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        echo "Downloading Dockerfile from private repository..."
-        # Get the download URL from GitHub API
-        DOWNLOAD_URL=$(gh api repos/DSLCI/test2/contents/Dockerfile.py311.x86._2.6.0.optimized?ref=docker-build --jq '.download_url')
-        echo "Download URL: $DOWNLOAD_URL"
-        # Download the file using curl with token
-        curl -H "Authorization: token $GH_TOKEN" -L -o Dockerfile "$DOWNLOAD_URL"
+        echo "Cloning test2 repository to get Dockerfile..."
+        # Clone the test2 repository (sparse checkout for efficiency)
+        git clone --depth 1 --branch docker-build --filter=blob:none --sparse https://github.com/DSLCI/test2.git /tmp/test2
+        cd /tmp/test2
+        git sparse-checkout set Dockerfile.py311.x86._2.6.0.optimized
+        # Copy Dockerfile to workspace
+        cp Dockerfile.py311.x86._2.6.0.optimized $GITHUB_WORKSPACE/Dockerfile
+        cd $GITHUB_WORKSPACE
+        rm -rf /tmp/test2
         echo "Dockerfile downloaded successfully"
         ls -lh Dockerfile
         echo "Dockerfile content preview:"
