@@ -127,10 +127,13 @@ jobs:
         id: build_status
         if: always()
         run: |
-          if [ -f "mindie-sd/dist/*.whl" ]; then
+          WHEEL_COUNT=$(ls mindie-sd/dist/*.whl 2>/dev/null | wc -l)
+          if [ "$WHEEL_COUNT" -gt 0 ]; then
             echo "STATUS=success" >> $GITHUB_OUTPUT
+            echo "Build status: success (found $WHEEL_COUNT wheel file(s))"
           else
             echo "STATUS=failed" >> $GITHUB_OUTPUT
+            echo "Build status: failed (no wheel files found)"
           fi
 
       - name: Upload wheel artifacts
@@ -249,10 +252,13 @@ jobs:
         id: build_status
         if: always()
         run: |
-          if [ -f "mindie-sd/dist/*.whl" ]; then
+          WHEEL_COUNT=$(ls mindie-sd/dist/*.whl 2>/dev/null | wc -l)
+          if [ "$WHEEL_COUNT" -gt 0 ]; then
             echo "STATUS=success" >> $GITHUB_OUTPUT
+            echo "Build status: success (found $WHEEL_COUNT wheel file(s))"
           else
             echo "STATUS=failed" >> $GITHUB_OUTPUT
+            echo "Build status: failed (no wheel files found)"
           fi
 
       - name: Upload wheel artifacts
