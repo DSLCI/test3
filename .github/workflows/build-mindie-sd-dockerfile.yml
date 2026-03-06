@@ -121,7 +121,8 @@ jobs:
           bash -c "cd /workspace && git clone ${{ env.REPO_URL }} mindie-sd 2>&1 | tee -a ${{ env.LOG_DIR }}/wheel-build.log && cd mindie-sd && source ${{ env.SET_ENV_PATH }} && export TORCH_DEVICE_BACKEND_AUTOLOAD=0 && export USER_ABI_VERSION=1 && python setup.py bdist_wheel 2>&1 | tee -a ${{ env.LOG_DIR }}/wheel-build.log && ls -lh dist/" | tee -a ${{ env.LOG_DIR }}/build.log
         
         # Check if wheel was built successfully
-        if [ -f "mindie-sd/dist/*.whl" ]; then
+        WHEEL_COUNT=$(ls mindie-sd/dist/*.whl 2>/dev/null | wc -l)
+        if [ "$WHEEL_COUNT" -gt 0 ]; then
           echo "Wheel package built successfully" | tee -a ${{ env.LOG_DIR }}/build.log
           echo "Wheel file info:" | tee -a ${{ env.LOG_DIR }}/build.log
           ls -lh mindie-sd/dist/*.whl | tee -a ${{ env.LOG_DIR }}/build.log
